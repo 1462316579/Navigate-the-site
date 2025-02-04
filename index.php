@@ -32,36 +32,32 @@ try {
 $search = $_GET['search'] ?? '';
 $category_id = $_GET['category'] ?? '';
 
-// 准备查询条件
-$where = [];
-$params = [];
-$types = "";
-
-if ($search) {
-    $where[] = "MATCH(title, description, keywords) AGAINST(? IN BOOLEAN MODE)";
-    $params[] = "*$search*";
-    $types .= "s";
-}
-
-if ($category_id) {
-    $where[] = "category_id = ?";
-    $params[] = $category_id;
-    $types .= "i";
-}
-
-$whereClause = $where ? 'WHERE ' . implode(' AND ', $where) : '';
-
-// 如果有搜索条件，使用预处理语句
-if (!empty($params)) {
-    $stmt = $pdo->prepare("SELECT l.*, c.name as category_name 
-                           FROM links l 
-                           JOIN categories c ON l.category_id = c.id 
-                           $whereClause 
-                           ORDER BY l.id DESC");
-    $stmt->bind_param($types, ...$params);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $links = $result->fetch_all(MYSQLI_ASSOC);
+// 修改搜索逻辑部分
+if ($search || $category_id) {
+    $sql = "SELECT l.*, c.name as category_name 
+            FROM links l 
+            JOIN categories c ON l.category_id = c.id 
+            WHERE 1=1";
+    $params = [];
+    
+    if ($search) {
+        $sql .= " AND (l.title LIKE ? OR l.description LIKE ? OR l.keywords LIKE ?)";
+        $searchTerm = "%$search%";
+        $params[] = $searchTerm;
+        $params[] = $searchTerm;
+        $params[] = $searchTerm;
+    }
+    
+    if ($category_id) {
+        $sql .= " AND l.category_id =?";
+        $params[] = $category_id;
+    }
+    
+    $sql .= " ORDER BY l.id DESC";
+    
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $links = $stmt->fetchAll();
 }
 ?>
 
@@ -73,6 +69,7 @@ if (!empty($params)) {
     <title>导航网站</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/boxicons@2.0.7/css/boxicons.min.css" rel="stylesheet">
+    <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
     <style>
         :root {
             --primary-color: #4f46e5;
@@ -98,15 +95,80 @@ if (!empty($params)) {
         }
 
         .search-box {
-            background: var(--card-bg);
-            padding: 2rem 0;
+            background: var(--bg-color);
+            padding: 1.5rem 0;
             margin-bottom: 2rem;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .search-wrapper {
+            max-width: 800px;
+            margin: 0 auto;
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 0.75rem;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
         }
 
         .search-form {
-            max-width: 800px;
-            margin: 0 auto;
+            display: flex;
+            width: 100%;
+        }
+
+        .search-input-wrapper {
+            flex: 1;
+            position: relative;
+            display: flex;
+            align-items: center;
+            background: var(--bg-color);
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            transition: all 0.3s ease;
+        }
+
+        .search-input-wrapper:focus-within {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 1rem;
+            color: #64748b;
+            font-size: 1.25rem;
+            pointer-events: none;
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 0.75rem 1rem 0.75rem 3rem;
+            border: none;
+            background: transparent;
+            font-size: 1rem;
+        }
+
+        .search-input:focus {
+            outline: none;
+            box-shadow: none;
+        }
+
+        .search-category {
+            min-width: 140px;
+            border-left: 1px solid #e2e8f0;
+        }
+
+        .search-category .form-select {
+            border: none;
+            padding: 0.75rem 1rem;
+            background-color: transparent;
+            color: #1e293b;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .search-category .form-select:focus {
+            outline: none;
+            box-shadow: none;
         }
 
         .category-section {
@@ -188,32 +250,71 @@ if (!empty($params)) {
             border-top: 1px solid #e2e8f0;
         }
 
-        .search-input {
-            border-radius: 8px;
-            padding: 0.75rem 1rem;
-            border: 1px solid #e2e8f0;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        }
-
-        .search-input:focus {
-            border-color: var(--primary-color);
-            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
-        }
-
-        .search-select {
-            min-width: 120px;
-            border-radius: 8px;
-        }
-
+        .search-box,
+        .search-form,
+        .search-input,
+        .search-select,
         .search-button {
-            border-radius: 8px;
-            padding: 0.75rem 1.5rem;
-            background-color: var(--primary-color);
-            border: none;
+            display: block;
         }
 
-        .search-button:hover {
-            background-color: var(--hover-color);
+        .nav-right {
+            display: flex;
+            align-items: center;
+        }
+
+        .nav-right .nav-link {
+            color: rgba(255, 255, 255, 0.9);
+            padding: 0.5rem;
+            border-radius: 50%;
+            transition: all 0.3s ease;
+        }
+
+        .nav-right .nav-link:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+        }
+
+        .user-menu .dropdown-toggle::after {
+            display: none;
+        }
+
+        .user-menu .dropdown-menu {
+            min-width: 200px;
+            padding: 0.5rem 0;
+            margin-top: 0.5rem;
+            border: none;
+            box-shadow: 0 2px 15px rgba(0, 0, 0, 0.1);
+            border-radius: 12px;
+        }
+
+        .user-menu .dropdown-item {
+            padding: 0.6rem 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #1e293b;
+        }
+
+        .user-menu .dropdown-item:hover {
+            background-color: #f8f9fa;
+            color: var(--primary-color);
+        }
+
+        .user-menu .dropdown-item-text {
+            padding: 0.6rem 1.5rem;
+            color: #64748b;
+            font-weight: 500;
+        }
+
+        .auth-links {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .auth-links .nav-link i {
+            font-size: 1.5rem;
         }
     </style>
 </head>
@@ -223,37 +324,40 @@ if (!empty($params)) {
             <a class="navbar-brand" href="/">
                 <i class='bx bx-compass'></i> 导航网站
             </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item">
-                        <div class="nav-right">
-                            <?php if (isset($_SESSION['user_id'])): ?>
-                                <span class="welcome">欢迎，<?php echo htmlspecialchars($_SESSION['username']); ?></span>
-                                <a href="logout.php" class="nav-link">退出</a>
-                            <?php else: ?>
-                                <a href="login.php" class="nav-link">登录</a>
-                                <a href="register.php" class="nav-link">注册</a>
-                            <?php endif; ?>
-                        </div>
-                    </li>
-                </ul>
+            <div class="nav-right ms-auto">
+                <?php if (isset($_SESSION['user_id'])): ?>
+                    <div class="user-menu dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            <i class='bx bxs-user-circle fs-4'></i>
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><span class="dropdown-item-text">Hi, <?php echo htmlspecialchars($_SESSION['username']); ?></span></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="logout.php"><i class='bx bx-log-out'></i> 退出</a></li>
+                        </ul>
+                    </div>
+                <?php else: ?>
+                    <div class="auth-links">
+                        <a href="login.php" class="nav-link" title="登录">
+                            <i class='bx bx-user fs-4'></i>
+                        </a>
+                    </div>
+                <?php endif; ?>
             </div>
         </div>
     </nav>
 
     <div class="search-box">
         <div class="container">
-            <form method="get" class="search-form">
-                <div class="row g-3 justify-content-center">
-                    <div class="col-md-8">
-                        <div class="input-group">
-                            <input type="text" name="search" class="form-control search-input" 
-                                   placeholder="搜索网站..." value="<?php echo htmlspecialchars($search); ?>">
-                            <select name="category" class="form-select search-select">
-                                <option value="">所有分类</option>
+            <div class="search-wrapper">
+                <form method="get" class="search-form">
+                    <div class="search-input-wrapper">
+                        <i class='bx bx-search search-icon'></i>
+                        <input type="text" name="search" class="search-input" 
+                               placeholder="搜索网站..." value="<?php echo htmlspecialchars($search); ?>">
+                        <div class="search-category">
+                            <select name="category" class="form-select">
+                                <option value="">全部分类</option>
                                 <?php foreach($categories as $cat): ?>
                                     <option value="<?php echo $cat['id']; ?>" 
                                             <?php echo $category_id == $cat['id'] ? 'selected' : ''; ?>>
@@ -261,97 +365,80 @@ if (!empty($params)) {
                                     </option>
                                 <?php endforeach; ?>
                             </select>
-                            <button class="btn btn-primary search-button" type="submit">
-                                <i class='bx bx-search'></i> 搜索
-                            </button>
                         </div>
                     </div>
-                </div>
-            </form>
+                </form>
+            </div>
         </div>
     </div>
 
     <div class="container">
-        <?php if ($search || $category_id): ?>
-            <div class="search-results mb-4">
-                <div class="category-header">
-                    <h2 class="category-title">
-                        <i class='bx bx-search-alt'></i> 搜索结果
-                    </h2>
-                </div>
-                <div class="row g-4">
-                    <?php
-                    foreach($links as $link):
-                    ?>
-                    <div class="col-md-6 col-lg-4">
-                        <div class="link-card">
-                            <div class="d-flex align-items-center mb-3">
-                                <?php if($link['icon']): ?>
-                                    <img src="<?php echo htmlspecialchars($link['icon']); ?>" 
-                                         alt="" class="link-icon">
-                                <?php else: ?>
-                                    <i class='bx bx-link link-icon'></i>
-                                <?php endif; ?>
-                                <a href="detail.php?id=<?php echo $link['id']; ?>" 
-                                   class="link-title">
-                                    <?php echo htmlspecialchars($link['title']); ?>
-                                </a>
-                            </div>
-                            <p class="link-description">
-                                <?php echo htmlspecialchars($link['description']); ?>
-                            </p>
-                            <div class="mt-2">
-                                <span class="badge bg-light text-dark">
-                                    <?php echo htmlspecialchars($link['category_name']); ?>
-                                </span>
-                            </div>
-                        </div>
+        <div class="row">
+            <!-- 左侧分类侧边栏 -->
+            <div class="col-md-2">
+                <div class="card category-sidebar-card">
+                    <div class="card-header">
+                        <h5 class="mb-0">网站分类</h5>
                     </div>
-                    <?php endforeach; ?>
+                    <div class="card-body p-0">
+                        <ul class="nav flex-column category-sidebar">
+                            <?php
+                            $stmt = $pdo->query("SELECT * FROM categories ORDER BY sort_order ASC, id ASC");
+                            while($row = $stmt->fetch()) {
+                                echo '<li class="nav-item">';
+                                echo '<a class="nav-link py-2 px-3" href="#category-'.$row['id'].'">';
+                                echo '<i class="bx bx-chevron-right"></i> '.htmlspecialchars($row['name']);
+                                echo '</a>';
+                                echo '</li>';
+                            }
+                            ?>
+                        </ul>
+                    </div>
                 </div>
             </div>
-        <?php else: ?>
-            <?php foreach($categories as $category): ?>
+            
+            <!-- 右侧网站列表内容 -->
+            <div class="col-md-10">
                 <?php
-                $stmt = $pdo->prepare("SELECT * FROM links WHERE category_id = ? ORDER BY id DESC");
-                $stmt->execute([$category['id']]);
-                $result = $stmt->get_result();
-                $links = $result->fetch_all(MYSQLI_ASSOC);
-                if (empty($links)) continue;
+                $stmt = $pdo->query("SELECT * FROM categories ORDER BY sort_order ASC, id ASC");
+                while($category = $stmt->fetch()) {
+                    echo '<div id="category-'.$category['id'].'" class="category-section mb-4">';
+                    echo '<div class="category-header">';
+                    echo '<h2 class="category-title">';
+                    echo '<i class="bx bx-category"></i> '.htmlspecialchars($category['name']);
+                    echo '</h2>';
+                    echo '</div>';
+                    echo '<div class="row g-4">';
+                    
+                    $links_stmt = $pdo->prepare("SELECT * FROM links WHERE category_id = ? ORDER BY id DESC");
+                    $links_stmt->execute([$category['id']]);
+                    
+                    while($link = $links_stmt->fetch()) {
+                        echo '<div class="col-md-6 col-lg-4">';
+                        echo '<div class="link-card">';
+                        echo '<div class="d-flex align-items-center mb-3">';
+                        if($link['icon']) {
+                            echo '<img src="'.htmlspecialchars($link['icon']).'" alt="" class="link-icon">';
+                        } else {
+                            echo '<i class="bx bx-link link-icon"></i>';
+                        }
+                        echo '<a href="detail.php?id='.$link['id'].'" class="link-title">';
+                        echo htmlspecialchars($link['title']);
+                        echo '</a>';
+                        echo '</div>';
+                        echo '<p class="link-description">';
+                        echo htmlspecialchars($link['description']);
+                        echo '</p>';
+                        echo '</div>';
+                        echo '</div>';
+                    }
+                    
+                    echo '</div>';
+                    echo '</div>';
+                }
                 ?>
-                <div class="category-section">
-                    <div class="category-header">
-                        <h2 class="category-title">
-                            <i class='bx bx-category'></i>
-                            <?php echo htmlspecialchars($category['name']); ?>
-                        </h2>
-                    </div>
-                    <div class="row g-4">
-                        <?php foreach($links as $link): ?>
-                        <div class="col-md-6 col-lg-4">
-                            <div class="link-card">
-                                <div class="d-flex align-items-center mb-3">
-                                    <?php if($link['icon']): ?>
-                                        <img src="<?php echo htmlspecialchars($link['icon']); ?>" 
-                                             alt="" class="link-icon">
-                                    <?php else: ?>
-                                        <i class='bx bx-link link-icon'></i>
-                                    <?php endif; ?>
-                                    <a href="detail.php?id=<?php echo $link['id']; ?>" 
-                                       class="link-title">
-                                        <?php echo htmlspecialchars($link['title']); ?>
-                                    </a>
-                                </div>
-                                <p class="link-description">
-                                    <?php echo htmlspecialchars($link['description']); ?>
-                                </p>
-                            </div>
-                        </div>
-                        <?php endforeach; ?>
-                    </div>
-                </div>
-            <?php endforeach; ?>
-        <?php endif; ?>
+            </div>
+        </div>
     </div>
 
     <footer class="footer">

@@ -45,6 +45,25 @@ CREATE TABLE IF NOT EXISTS `visits` (
     UNIQUE KEY `visit_date` (`visit_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 删除旧表（如果存在）
+DROP TABLE IF EXISTS `smtp_config`;
+
+-- 创建新的SMTP配置表
+CREATE TABLE IF NOT EXISTS `smtp_config` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `smtp_host` varchar(255) NOT NULL,
+  `smtp_port` int(11) NOT NULL,
+  `smtp_user` varchar(255) NOT NULL,
+  `smtp_pass` varchar(255) NOT NULL,
+  `smtp_from` varchar(255) NOT NULL,
+  `smtp_from_name` varchar(255) DEFAULT '',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 添加 smtp_from_name 字段
+ALTER TABLE `smtp_config` 
+ADD COLUMN `smtp_from_name` varchar(255) DEFAULT '' AFTER `smtp_from`;
+
 -- 插入一个默认管理员用户（密码为 'admin'）
 INSERT INTO `users` (`username`, `email`, `password`, `status`) 
 VALUES ('admin', 'admin@example.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 1)

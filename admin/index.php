@@ -182,6 +182,97 @@ if (isset($_POST['delete_user'])) {
         $error = "删除用户失败";
     }
 }
+
+// 添加SMTP配置处理代码
+if(isset($_POST['update_smtp'])) {
+    $smtp_host = trim($_POST['smtp_host']);
+    $smtp_port = (int)$_POST['smtp_port'];
+    $smtp_user = trim($_POST['smtp_user']);
+    $smtp_pass = trim($_POST['smtp_pass']);
+    $smtp_from = trim($_POST['smtp_from']);
+    $smtp_from_name = trim($_POST['smtp_from_name'] ?? '');  // 添加发件人名称
+    
+    // 验证必填字段
+    if(empty($smtp_host) || empty($smtp_port) || empty($smtp_user) || empty($smtp_pass) || empty($smtp_from)) {
+        echo "<script>alert('所有字段都必须填写！');</script>";
+    } else {
+        // 检查是否已存在配置
+        $check_smtp = $conn->query("SELECT id FROM smtp_config LIMIT 1");
+        $exists = $check_smtp->fetch(PDO::FETCH_ASSOC);
+        
+        try {
+            if($exists) {
+                // 更新现有配置
+                $stmt = $conn->prepare("UPDATE smtp_config SET 
+                        smtp_host = ?,
+                        smtp_port = ?,
+                        smtp_user = ?,
+                        smtp_pass = ?,
+                        smtp_from = ?,
+                        smtp_from_name = ?");
+                $result = $stmt->execute([$smtp_host, $smtp_port, $smtp_user, $smtp_pass, $smtp_from, $smtp_from_name]);
+            } else {
+                // 插入新配置
+                $stmt = $conn->prepare("INSERT INTO smtp_config 
+                        (smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from, smtp_from_name) 
+                        VALUES (?, ?, ?, ?, ?, ?)");
+                $result = $stmt->execute([$smtp_host, $smtp_port, $smtp_user, $smtp_pass, $smtp_from, $smtp_from_name]);
+            }
+            
+            if($result) {
+                echo "<script>alert('SMTP配置已保存');</script>";
+            } else {
+                echo "<script>alert('保存失败');</script>";
+            }
+        } catch (PDOException $e) {
+            echo "<script>alert('数据库错误：" . addslashes($e->getMessage()) . "');</script>";
+        }
+    }
+}
+
+// 在PHP处理部分添加测试邮件发送功能
+if(isset($_POST['test_smtp'])) {
+    require_once '../includes/Mailer.php';
+    
+    $test_email = $_POST['test_email'];
+    
+    // 重新获取最新的SMTP配置
+    $smtp_config = $conn->query("SELECT * FROM smtp_config LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    
+    // 检查是否已配置SMTP
+    if (!$smtp_config || empty($smtp_config['smtp_from'])) {
+        echo "<script>alert('请先完成SMTP配置！');</script>";
+    } else {
+        try {
+            // 验证发件人邮箱格式
+            if (!filter_var($smtp_config['smtp_from'], FILTER_VALIDATE_EMAIL)) {
+                throw new Exception("发件人邮箱格式无效");
+            }
+            
+            // 验证测试邮箱格式
+            if (!filter_var($test_email, FILTER_VALIDATE_EMAIL)) {
+                throw new Exception("测试邮箱格式无效");
+            }
+            
+            // 开启调试模式，查看详细错误信息
+            $smtp_config['debug'] = true;
+            
+            $mailer = new Mailer($smtp_config);
+            $result = $mailer->sendTest($test_email);
+            
+            if($result['success']) {
+                echo "<script>alert('测试邮件发送成功！请检查收件箱。');</script>";
+            } else {
+                echo "<script>alert('发送失败：" . addslashes($result['message']) . "');</script>";
+            }
+        } catch (Exception $e) {
+            echo "<script>alert('系统错误：" . addslashes($e->getMessage()) . "');</script>";
+        }
+    }
+}
+
+// 获取现有SMTP配置（用于显示表单）
+$smtp_config = $conn->query("SELECT * FROM smtp_config LIMIT 1")->fetch(PDO::FETCH_ASSOC);
 ?>
 
 <!DOCTYPE html>
@@ -545,6 +636,9 @@ if (isset($_POST['delete_user'])) {
                 </a>
                 <a href="users.php" class="menu-item">
                     <i class='bx bx-user'></i> 用户管理
+                </a>
+                <a href="smtp_config.php" class="menu-item">
+                    <i class='bx bx-envelope'></i> 邮箱配置
                 </a>
                 <a href="logout.php" class="menu-item text-danger">
                     <i class='bx bx-log-out'></i> 退出登录
@@ -1062,6 +1156,85 @@ if (isset($_POST['delete_user'])) {
                     </div>
                 </div>
             </div>
+
+            <!-- SMTP配置内容 -->
+            <div class="smtp-config" style="display: none;">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h4 class="mb-0">邮箱配置</h4>
+                </div>
+
+                <div class="card">
+                    <div class="card-body">
+                        <form method="post" action="">
+                            <div class="mb-3">
+                                <label class="form-label">SMTP服务器</label>
+                                <input type="text" class="form-control" name="smtp_host" value="<?php echo $smtp_config['smtp_host'] ?? ''; ?>" required>
+                                <div class="form-text">例如：smtp.qq.com</div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">SMTP端口</label>
+                                <input type="number" class="form-control" name="smtp_port" value="<?php echo $smtp_config['smtp_port'] ?? ''; ?>" required>
+                                <div class="form-text">常用端口：465（SSL）或 25（非SSL）</div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">SMTP用户名</label>
+                                <input type="text" class="form-control" name="smtp_user" value="<?php echo $smtp_config['smtp_user'] ?? ''; ?>" required>
+                                <div class="form-text">通常是完整的邮箱地址</div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">SMTP密码</label>
+                                <input type="password" class="form-control" name="smtp_pass" value="<?php echo $smtp_config['smtp_pass'] ?? ''; ?>" required>
+                                <div class="form-text">QQ邮箱需要使用授权码，而不是邮箱密码</div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">发件人邮箱</label>
+                                <input type="email" class="form-control" name="smtp_from" value="<?php echo $smtp_config['smtp_from'] ?? ''; ?>" required>
+                                <div class="form-text">用于发送系统邮件的邮箱地址</div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">发件人名称</label>
+                                <input type="text" class="form-control" name="smtp_from_name" value="<?php echo $smtp_config['smtp_from_name'] ?? ''; ?>">
+                                <div class="form-text">显示的发件人名称，可选</div>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button type="submit" name="update_smtp" class="btn btn-primary">
+                                    <i class='bx bx-save'></i> 保存配置
+                                </button>
+                                <button type="button" class="btn btn-info" data-bs-toggle="modal" data-bs-target="#testEmailModal">
+                                    <i class='bx bx-send'></i> 发送测试
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加测试邮件发送模态框 -->
+    <div class="modal fade" id="testEmailModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">发送测试邮件</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="post" action="">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label">测试接收邮箱</label>
+                            <input type="email" class="form-control" name="test_email" required>
+                            <div class="form-text">请输入用于接收测试邮件的邮箱地址</div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                        <button type="submit" name="test_smtp" class="btn btn-primary">
+                            <i class='bx bx-send'></i> 发送测试
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 
@@ -1081,6 +1254,7 @@ if (isset($_POST['delete_user'])) {
                 document.querySelector('.category-management').style.display = 'none';
                 document.querySelector('.link-management').style.display = 'none';
                 document.querySelector('.user-management').style.display = 'none';
+                document.querySelector('.smtp-config').style.display = 'none';
                 
                 if (target === 'index.php') {
                     document.querySelector('.dashboard-content').style.display = 'block';
@@ -1090,6 +1264,8 @@ if (isset($_POST['delete_user'])) {
                     document.querySelector('.link-management').style.display = 'block';
                 } else if (target === 'users.php') {
                     document.querySelector('.user-management').style.display = 'block';
+                } else if (target === 'smtp_config.php') {
+                    document.querySelector('.smtp-config').style.display = 'block';
                 }
             });
         });
